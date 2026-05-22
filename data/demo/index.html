@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>XForm Public Renderer</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Inter, Arial, sans-serif;
+            background:
+                radial-gradient(circle at top right, #2563eb22, transparent 30%),
+                radial-gradient(circle at bottom left, #9333ea22, transparent 30%),
+                #0f172a;
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #fff;
+        }
+
+        .panel {
+            max-width: 960px;
+            margin: auto;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 22px;
+            padding: 32px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+        }
+
+        .card h3 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            letter-spacing: -.4px;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 28px;
+            flex-wrap: wrap;
+        }
+
+        .toolbar input {
+            flex: 1;
+            min-width: 220px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, .08);
+            background: rgba(255, 255, 255, .06);
+            color: #fff;
+            font-size: .95rem;
+            outline: none;
+        }
+
+        .toolbar input::placeholder {
+            color: rgba(255, 255, 255, .45);
+        }
+
+        .toolbar input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, .15);
+        }
+
+        .btn {
+            border: none;
+            padding: 14px 22px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: .2s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(59, 130, 246, .28);
+        }
+
+        #xform-container {
+            background: white;
+            border-radius: 18px;
+            padding: 28px;
+            min-height: 220px;
+            color: #111827;
+        }
+
+        .loading {
+            color: #64748b;
+            font-size: .95rem;
+        }
+
+        .error {
+            color: #dc2626;
+            font-weight: 600;
+            padding: 14px;
+            border-radius: 12px;
+            background: #fee2e2;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 20px 14px;
+            }
+
+            .card {
+                padding: 20px;
+                border-radius: 18px;
+            }
+
+            #xform-container {
+                padding: 18px;
+            }
+
+            .btn,
+            .toolbar input {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="panel">
+        <div class="card">
+            <h3>🌐 Formulaire public</h3>
+
+            <div class="toolbar">
+                <input id="form-slug" type="text" value="recrutement-dev" placeholder="Slug du formulaire" />
+                <button class="btn" onclick="loadAndRender()">Charger</button>
+            </div>
+
+            <div id="xform-container"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import {
+            XFormClient,
+            XFormRenderer,
+            injectXFormStyles
+        } from "./xform-sdk.js";
+
+        injectXFormStyles();
+
+        const client = new XFormClient({
+            baseUrl: "http://localhost:8000",
+            token: "1234",
+            pluginPrefix: "/app/xform"
+        });
+
+        async function loadAndRender() {
+            const container = document.getElementById("xform-container");
+
+            try {
+                const slug = document.getElementById("form-slug").value.trim();
+
+                container.innerHTML = `<div class="loading">Chargement du formulaire...</div>`;
+
+                const { form } = await client.public.getForm(slug);
+
+                console.log("Formulaire chargé :", form);
+
+                const renderer = new XFormRenderer(container, form, {
+                    xformClient: client,
+                    onSubmit: async (data, meta) => {
+                        await client.public.submitWithFiles(slug, data, meta);
+                        alert("Formulaire envoyé avec succès");
+                    }
+                });
+
+                renderer.render();
+
+            } catch (err) {
+                container.innerHTML =
+                    `<div class="error">Erreur : ${err.message}</div>`;
+            }
+        }
+
+        window.loadAndRender = loadAndRender;
+
+        loadAndRender();
+    </script>
+</body>
+
+</html>

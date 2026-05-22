@@ -1,0 +1,144 @@
+{
+  "plugin": "xform",
+  "display_name": "XForm",
+  "description": "Build forms. Launch workflows.",
+  "xflow_supported": true,
+  "ipc_actions": [
+    {
+      "name": "create_form",
+      "qualified_name": "xform.create_form",
+      "description": "Créer un nouveau formulaire",
+      "input_schema": {
+        "title": { "type": "string", "required": true },
+        "fields": { "type": "array", "required": true },
+        "description": { "type": "string", "required": false },
+        "settings": { "type": "object", "required": false },
+        "theme": { "type": "object", "required": false },
+        "tags": { "type": "array", "required": false }
+      },
+      "output_schema": {
+        "form": { "type": "object" }
+      }
+    },
+    {
+      "name": "update_form",
+      "qualified_name": "xform.update_form",
+      "description": "Modifier un formulaire existant",
+      "input_schema": {
+        "form_id": { "type": "string", "required": true },
+        "title": { "type": "string", "required": false },
+        "description": { "type": "string", "required": false },
+        "fields": { "type": "array", "required": false }
+      },
+      "output_schema": {
+        "form": { "type": "object" }
+      }
+    },
+    {
+      "name": "delete_form",
+      "qualified_name": "xform.delete_form",
+      "description": "Supprimer un formulaire",
+      "input_schema": {
+        "form_id": { "type": "string", "required": true }
+      }
+    },
+    {
+      "name": "get_form",
+      "qualified_name": "xform.get_form",
+      "description": "Récupérer un formulaire par ID ou slug",
+      "input_schema": {
+        "form_id": { "type": "string", "required": false },
+        "slug": { "type": "string", "required": false }
+      },
+      "output_schema": {
+        "form": { "type": "object" }
+      }
+    },
+    {
+      "name": "list_forms",
+      "qualified_name": "xform.list_forms",
+      "description": "Lister les formulaires",
+      "input_schema": {
+        "owner_id": { "type": "string", "required": false },
+        "status": { "type": "string", "required": false },
+        "tags": { "type": "array", "required": false },
+        "limit": { "type": "integer", "required": false },
+        "offset": { "type": "integer", "required": false }
+      },
+      "output_schema": {
+        "forms": { "type": "array" }
+      }
+    },
+    {
+      "name": "submit",
+      "qualified_name": "xform.submit",
+      "description": "Soumettre une réponse à un formulaire",
+      "input_schema": {
+        "slug": { "type": "string", "required": true },
+        "data": { "type": "object", "required": true },
+        "meta": { "type": "object", "required": false }
+      },
+      "output_schema": {
+        "submission_id": { "type": "string" },
+        "message": { "type": "string" },
+        "redirect_url": { "type": "string" }
+      }
+    },
+    {
+      "name": "list_submissions",
+      "qualified_name": "xform.list_submissions",
+      "description": "Lister les soumissions d'un formulaire",
+      "input_schema": {
+        "form_id": { "type": "string", "required": true },
+        "status": { "type": "string", "required": false },
+        "limit": { "type": "integer", "required": false },
+        "offset": { "type": "integer", "required": false }
+      },
+      "output_schema": {
+        "submissions": { "type": "array" }
+      }
+    },
+    {
+      "name": "export",
+      "qualified_name": "xform.export",
+      "description": "Exporter les soumissions",
+      "input_schema": {
+        "form_id": { "type": "string", "required": true },
+        "format": { "type": "string", "required": false }
+      },
+      "output_schema": {
+        "data": { "type": "string" },
+        "format": { "type": "string" }
+      }
+    },
+    {
+      "name": "analytics",
+      "qualified_name": "xform.analytics",
+      "description": "Statistiques d'un formulaire",
+      "input_schema": {
+        "form_id": { "type": "string", "required": true }
+      },
+      "output_schema": {
+        "analytics": { "type": "object" }
+      }
+    },
+    {
+      "name": "track_view",
+      "qualified_name": "xform.track_view",
+      "description": "Enregistrer une vue de formulaire",
+      "input_schema": {
+        "form_id": { "type": "string", "required": true },
+        "ip": { "type": "string", "required": false },
+        "user_agent": { "type": "string", "required": false }
+      }
+    }
+  ],
+  "events": {
+    "listens": [
+      "xform.send_email"
+    ],
+    "emits": [
+      "xform.new_submission"
+    ]
+  }
+}

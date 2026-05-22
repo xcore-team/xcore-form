@@ -1,0 +1,70 @@
+name: xform
+version: 1.0.0
+author: xcore contributors
+description: Build forms. Launch workflows.
+execution_mode: trusted
+framework_version: ">=2.0"
+entry_point: src/main.py
+
+env:
+  MAX_FILE_SIZE_MB: "10"
+  ALLOWED_FILE_TYPES: "pdf,doc,docx,jpg,jpeg,png,gif,xlsx,csv"
+  DEFAULT_EXPORT_FORMAT: "xlsx"
+
+allowed_imports:
+  - pydantic
+  - sqlalchemy
+  - slugify
+  - openpyxl
+  - uuid
+  - hashlib
+  - json
+  - re
+  - datetime
+  - pathlib
+  - typing
+  - dataclasses
+  - enum
+  - functools
+  - itertools
+  - collections
+  - string
+  - asyncio
+  - logging
+
+permissions:
+  - resource: "db.*"
+    actions: ["read", "write"]
+    effect: allow
+  - resource: "cache.*"
+    actions: ["read", "write"]
+    effect: allow
+  - resource: "xflow.*"
+    actions: ["*"]
+    effect: allow
+  - resource: "xpulse.*"
+    actions: ["*"]
+    effect: allow
+  - resource: "xdesk.*"
+    actions: ["*"]
+    effect: allow
+  - resource: "xflow.integration"
+    actions: ['*']
+    effect: allow
+
+resources:
+  timeout_seconds: 30
+  max_memory_mb: 256
+  max_disk_mb: 500
+  rate_limit:
+    calls: 200
+    period_seconds: 60
+
+runtime:
+  health_check:
+    enabled: true
+    interval_seconds: 30
+    timeout_seconds: 5
+  retry:
+    max_attempts: 1
+    backoff_seconds: 0.0

@@ -10,7 +10,8 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List
 
-from ..schemas.form import FormDefinition, FormSubmission
+from ..domain.forms import FormDefinition
+from ..domain.submissions import FormSubmission
 
 logger = logging.getLogger("xform.export")
 

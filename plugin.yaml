@@ -6,10 +6,83 @@ execution_mode: trusted
 framework_version: ">=2.0"
 entry_point: src/main.py
 
+
+envconfiguration:
+  inject: true
+  env_file: .env
+
+requires:
+  - name: auth
+    version: ">=0.1.0"
+
 env:
   MAX_FILE_SIZE_MB: "10"
   ALLOWED_FILE_TYPES: "pdf,doc,docx,jpg,jpeg,png,gif,xlsx,csv"
   DEFAULT_EXPORT_FORMAT: "xlsx"
+
+storage:
+  backend: supabase     # local | s3 | r2 | supabase
+  local:
+    path: data/uploads  # relatif au dossier du plugin
+  s3:
+    bucket: ""
+    region: us-east-1
+    access_key_id: ""       # ou variable d'env AWS_ACCESS_KEY_ID
+    secret_access_key: ""   # ou variable d'env AWS_SECRET_ACCESS_KEY
+    prefix: xform/          # préfixe des clés dans le bucket
+    endpoint_url: ""        # vide = AWS S3, sinon MinIO/R2/autre
+  r2:
+    bucket: ""
+    account_id: ""          # Cloudflare account ID
+    access_key_id: ""
+    secret_access_key: ""
+    prefix: xform/
+  supabase:
+    url: ${NEXT_PUBLIC_SUPABASE_URL}                 # https://xxxx.supabase.co
+    key: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}                 # service_role key (pas anon key)
+    bucket: test
+    prefix: uploads/
+    public: false           # true si le bucket est public (URLs directes)
+
+events_emitted:
+  xform.submission:
+    description: "Soumission complète avec données, tenant et définition des champs — consommé par xflow"
+    payload_schema:
+      tenant_id: string
+      owner_id: string
+      form_id: string
+      form_title: string
+      form_slug: string
+      form_tags: array
+      submission_id: string
+      submission_data: object
+      labeled_data: object
+      submitted_at: string
+      submitter:
+        user_id: string
+        ip: string
+        user_agent: string
+      fields: array
+
+  xform.new_submission:
+    description: "Nouvelle soumission reçue (fallback quand XPulse est indisponible)"
+    payload_schema:
+      form_id: string
+      form_title: string
+      owner_id: string
+      submission_id: string
+      submission_data: object
+
+  xform.send_email:
+    description: "Demande d'envoi d'email de confirmation au soumetteur"
+    payload_schema:
+      to: string
+      subject: string
+      html: string
+      context:
+        form_id: string
+        form_title: string
+        submission_id: string
 
 allowed_imports:
   - pydantic
@@ -31,6 +104,33 @@ allowed_imports:
   - string
   - asyncio
   - logging
+
+rbac:
+  grants:
+    - name: xform:forms:read
+      description: "Consulter la liste et le détail de ses formulaires"
+      tenant_grantable: true
+      group: xform
+
+    - name: xform:forms:write
+      description: "Créer, modifier et supprimer des formulaires"
+      tenant_grantable: true
+      group: xform
+
+    - name: xform:submissions:read
+      description: "Consulter les soumissions et les analytics d'un formulaire"
+      tenant_grantable: true
+      group: xform
+
+    - name: xform:submissions:export
+      description: "Exporter les soumissions (XLSX, CSV, JSON)"
+      tenant_grantable: true
+      group: xform
+
+    - name: xform:admin
+      description: "Accès complet xform — toutes les opérations sur tous les formulaires"
+      tenant_grantable: false
+      group: xform
 
 permissions:
   - resource: "db.*"

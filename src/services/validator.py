@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Tuple
 
-from ..schemas.form import FieldType, FormDefinition, FormField, LogicOperator
+from ..domain.forms import FieldType, FormDefinition, FormField, LogicOperator
 
 
 class ValidationError(Exception):

@@ -28,6 +28,7 @@ class XFormRecord(Base):
     description: Mapped[Optional[str]] = mapped_column(Text)
     slug:        Mapped[str] = mapped_column(String(255), unique=True, index=True)
     owner_id:    Mapped[str] = mapped_column(String(64), index=True)
+    tenant_id:   Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
 
     # Stockage JSON flexible (champs, étapes, settings, thème)
     fields:      Mapped[Dict[str, Any]] = mapped_column(JSON, default=list)
@@ -84,6 +85,25 @@ class XFormViewRecord(Base):
     viewed_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     form: Mapped["XFormRecord"] = relationship(back_populates="views")
+
+
+class XFormFileRecord(Base):
+    """Métadonnées d'un fichier uploadé."""
+    __tablename__ = "xform_files"
+
+    id:            Mapped[str] = mapped_column(String(64), primary_key=True)   # file_id
+    form_id:       Mapped[str] = mapped_column(
+        ForeignKey("xform_forms.id", ondelete="CASCADE"), index=True
+    )
+    submission_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("xform_submissions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    field_name:    Mapped[str] = mapped_column(String(255))
+    original_name: Mapped[str] = mapped_column(String(512))
+    stored_name:   Mapped[str] = mapped_column(String(512))
+    size_bytes:    Mapped[int] = mapped_column(Integer)
+    mime_type:     Mapped[str] = mapped_column(String(255))
+    uploaded_at:   Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class XFormPipelineLogRecord(Base):

@@ -7,7 +7,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from ..schemas.form import FormDefinition, FormSubmission, PipelineLogEntry, SubmissionStatus
+from ..domain.forms import FormDefinition
+from ..domain.submissions import FormSubmission, PipelineLogEntry, SubmissionStatus
 from ..repositories.store import XFormStore
 
 logger = logging.getLogger("xform.pipeline")
@@ -56,7 +57,7 @@ class XFormPipeline:
         await self._step(
             submission, form.id, "xflow_trigger",
             self._trigger_workflow, form, submission,
-            enabled=bool(settings.workflow_id),
+            enabled=bool(settings.workflow_name),
         )
         await self._step(
             submission, form.id, "xdesk_ticket",
@@ -127,24 +128,69 @@ class XFormPipeline:
     async def _trigger_workflow(
         self, form: FormDefinition, submission: FormSubmission
     ) -> None:
-        """Déclenche un workflow XFlow avec les données de la soumission."""
+        """Déclenche un workflow XFlow avec les données complètes de la soumission."""
+        # Construire un mapping label → valeur lisible pour chaque champ
+        labeled_data = {}
+        for field in form.fields:
+            raw = submission.data.get(field.name) or submission.data.get(field.id)
+            if raw is not None:
+                labeled_data[field.label] = raw
+
+        xflow_payload = {
+            # Contexte tenant
+            "tenant_id":       form.tenant_id,
+            "owner_id":        form.owner_id,
+            # Formulaire
+            "form_id":         form.id,
+            "form_title":      form.title,
+            "form_slug":       form.slug,
+            "form_tags":       form.tags,
+            # Soumission
+            "submission_id":   submission.id,
+            "submission_data": submission.data,        # données brutes {name: value}
+            "labeled_data":    labeled_data,           # données lisibles {label: value}
+            "submitted_at":    submission.created_at.isoformat() if submission.created_at else None,
+            # Meta soumetteur
+            "submitter": {
+                "user_id":    submission.meta.user_id,
+                "ip":         submission.meta.ip,
+                "user_agent": submission.meta.user_agent,
+            },
+            # Définition des champs (pour que xflow puisse les traiter sans appel retour)
+            "fields": [
+                {
+                    "name":     f.name,
+                    "label":    f.label,
+                    "type":     f.type.value,
+                    "required": f.validation.required,
+                }
+                for f in form.fields
+            ],
+        }
+
+        # Émettre l'event sur le bus — xflow peut écouter via trigger événement.
+        # tenant_id est requis dans le payload pour que xflow puisse router l'event.
+        await self._events.emit("xform.submission", xflow_payload)
+
+        # Appel IPC direct si un workflow_id (= nom du workflow) est configuré.
+        # tenant_id est obligatoire au niveau racine du payload xflow.
+        if not form.tenant_id:
+            logger.warning(
+                "[xform] workflow_id configuré mais tenant_id absent du formulaire "
+                "(formulaire créé avant la migration 0003) — appel IPC xflow ignoré."
+            )
+            return
+
         try:
             result = await self._call("xflow", "run", {
-                "workflow_name": form.settings.workflow_id,
-                "payload": {
-                    "form_id": form.id,
-                    "form_title": form.title,
-                    "form_slug": form.slug,
-                    "submission_id": submission.id,
-                    "submission_data": submission.data,
-                    "submitted_at": submission.created_at.isoformat() if submission.created_at else None,
-                    "owner_id": form.owner_id,
-                },
+                "tenant_id":     form.tenant_id,       # requis au niveau racine
+                "workflow_name": form.settings.workflow_name,  # = nom du workflow dans xflow
+                "payload":       xflow_payload,
             })
             logger.info(
                 "[xform] XFlow déclenché — workflow=%s run=%s",
-                form.settings.workflow_id,
-                result.get("run_id"),
+                form.settings.workflow_name,
+                (result or {}).get("run_id"),
             )
         except Exception as e:
             logger.error("[xform] Erreur déclenchement XFlow : %s", e)
@@ -188,6 +234,7 @@ class XFormPipeline:
                 form_id=form_id,
                 step=step_name,
                 status="skipped",
+                payload={"reason": "disabled_in_settings"},
             ))
             return
 
@@ -198,6 +245,7 @@ class XFormPipeline:
                 form_id=form_id,
                 step=step_name,
                 status="success",
+                payload={"submission_id": submission.id, "form_id": form_id},
             ))
         except Exception as e:
             logger.error("[xform] Étape '%s' échouée : %s", step_name, e)
@@ -207,6 +255,7 @@ class XFormPipeline:
                 step=step_name,
                 status="failed",
                 error=str(e),
+                payload={"submission_id": submission.id, "form_id": form_id},
             ))
             # On ne bloque pas le pipeline sur une étape optionnelle
 

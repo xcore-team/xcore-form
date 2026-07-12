@@ -174,13 +174,13 @@ class XFormStore:
             forms = forms[offset: offset + limit]
         return forms
 
-    async def delete_form(self, form_id: str, storage=None) -> bool:
+    async def delete_form(self, form_id: str, storage=None, file_namespace: str | None = None) -> bool:
         form = await self.get_form(form_id)
         if not form:
             return False
-        # Supprime les fichiers disque avant la row DB
+        # Supprime les fichiers du backend (ext.storage) avant la row DB
         if storage is not None:
-            await storage.delete_all_for_form(form_id)
+            await storage.delete_namespace(file_namespace or form_id)
         async with self._db.session() as session:
             record = await session.get(XFormRecord, form_id)
             if record:

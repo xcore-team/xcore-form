@@ -27,7 +27,6 @@ import asyncio
 import json
 import logging
 import mimetypes as _mimetypes
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
@@ -45,14 +44,12 @@ from .repositories.store import XFormStore
 from .services.export import XFormExporter
 from .services.pipeline import XFormPipeline
 from .services.slug import unique_slug
-from .services.storage import (
+from .services.validator import XFormValidator
+from extensions.xstorage.uploader import (
     FileStorageError,
-    FileStorageService,
     FileTooLargeError,
     FileTypeNotAllowedError,
 )
-from .services.storage_backends import build_backend
-from .services.validator import XFormValidator
 
 logger = logging.getLogger("xform")
 router = RouterRegistry()
@@ -114,17 +111,13 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
 
         await self._create_tables()
 
-        plugin_dir = Path(__file__).parent.parent
-        max_size_mb = int(self.ctx.env.get("MAX_FILE_SIZE_MB", "10"))
-
-        storage_config = (self.ctx.config or {}).get("storage") or {}
-        backend = build_backend(storage_config, plugin_dir)
-        logger.info("Backend stockage : %s", type(backend).__name__)
+        # Stockage de fichiers délégué à l'extension partagée ext.storage
+        # (extensions/xstorage) — voir integration.yaml services.extensions.storage.
+        self._storage = self.get_service("ext.storage")
 
         self._store = XFormStore(self.db, self.cache)
         self._validator = XFormValidator()
         self._exporter = XFormExporter()
-        self._storage = FileStorageService(backend=backend, max_size_mb=max_size_mb)
         self._pipeline = XFormPipeline(
             store=self._store,
             call_plugin=self.call_plugin,
@@ -143,11 +136,18 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
 
         self.ctx.events.on("xform.send_email")(self._on_send_email)
         await self._declare_rbac()
-        logger.info("XForm prêt (uploads max=%dMB).", max_size_mb)
+        logger.info("XForm prêt.")
 
     async def on_unload(self) -> None:
-        await self._storage.close()
+        # ext.storage est un service partagé : son cycle de vie (init/shutdown)
+        # est géré par le kernel, pas par ce plugin — ne pas le fermer ici.
         logger.info("XForm arrêté.")
+
+    @staticmethod
+    def _file_namespace(form_id: str) -> str:
+        """Espace de nommage ext.storage pour ce plugin — évite toute collision
+        avec les fichiers d'autres plugins partageant le même backend."""
+        return f"xform/{form_id}"
 
     async def _create_tables(self) -> None:
         async with self.db.engine.begin() as conn:
@@ -299,7 +299,7 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
             if file_id and isinstance(file_id, str):
                 file_meta = await self._store.get_file_meta(file_id)
                 stored = file_meta.stored_name if file_meta else None
-                if not await self._storage.exists(file_id, form.id, stored_name=stored):
+                if not await self._storage.exists(file_id, self._file_namespace(form.id), stored_name=stored):
                     raise HTTPException(
                         status_code=422,
                         detail=(
@@ -377,7 +377,7 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
         self._get_form_or_404(form)
         if form.owner_id != current_user["sub"] and "admin:*" not in current_user.get("permissions", []):
             raise HTTPException(status_code=403, detail="Accès non autorisé.")
-        deleted = await self._store.delete_form(form_id, storage=self._storage)
+        deleted = await self._store.delete_form(form_id, storage=self._storage, file_namespace=self._file_namespace(form_id))
         if not deleted:
             raise HTTPException(status_code=404, detail="Formulaire introuvable.")
         return {"status": "ok", "deleted": form_id}
@@ -446,16 +446,15 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
         if not meta or meta.form_id != form_id:
             raise HTTPException(status_code=404, detail="Fichier introuvable.")
 
-        backend = self._storage._backend
-        # Backends qui supportent les URLs signées
-        if hasattr(backend, "get_signed_url"):
-            url = await backend.get_signed_url(f"{form_id}/{file_id}", expires_in=expires_in)
-            if url:
-                return {"url": url, "expires_in": expires_in, "type": "signed"}
-        if hasattr(backend, "get_public_url"):
-            url = await backend.get_public_url(f"{form_id}/{file_id}")
-            if url:
-                return {"url": url, "type": "public"}
+        namespace = self._file_namespace(form_id)
+        url = await self._storage.get_signed_url(
+            file_id, namespace, stored_name=meta.stored_name, expires_in=expires_in
+        )
+        if url:
+            return {"url": url, "expires_in": expires_in, "type": "signed"}
+        url = await self._storage.get_public_url(file_id, namespace, stored_name=meta.stored_name)
+        if url:
+            return {"url": url, "type": "public"}
 
         # Fallback : URL locale
         return {
@@ -478,7 +477,7 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
         meta = await self._store.get_file_meta(file_id)
         if not meta or meta.form_id != form_id:
             raise HTTPException(status_code=404, detail="Fichier introuvable.")
-        await self._storage.delete(file_id, form_id, stored_name=meta.stored_name)
+        await self._storage.delete(file_id, self._file_namespace(form_id), stored_name=meta.stored_name)
         await self._store.delete_file_meta(file_id)
         return {"status": "ok", "deleted": file_id}
 
@@ -594,7 +593,7 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
         if not meta or meta.form_id != form_id:
             raise HTTPException(status_code=404, detail="Fichier introuvable.")
 
-        content = await self._storage.read(file_id, form_id, stored_name=meta.stored_name)
+        content = await self._storage.read(file_id, self._file_namespace(form_id), stored_name=meta.stored_name)
         if content is None:
             raise HTTPException(status_code=404, detail="Fichier introuvable sur le backend.")
 
@@ -678,7 +677,7 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
         _: AuthPayload = Depends(require_permission("xform:admin")),
     ) -> dict:
         """Supprimer n'importe quel formulaire (admin, sans vérification d'ownership)."""
-        deleted = await self._store.delete_form(form_id, storage=self._storage)
+        deleted = await self._store.delete_form(form_id, storage=self._storage, file_namespace=self._file_namespace(form_id))
         if not deleted:
             raise HTTPException(status_code=404, detail="Formulaire introuvable.")
         return {"status": "ok", "deleted": form_id}
@@ -805,9 +804,10 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
     ) -> dict:
         """Supprimer les fichiers uploadés mais jamais liés à une soumission."""
         orphans = await self._store.list_orphan_files(form_id)
+        namespace = self._file_namespace(form_id)
         deleted = 0
         for f in orphans:
-            await self._storage.delete(f.file_id, form_id, stored_name=f.stored_name)
+            await self._storage.delete(f.file_id, namespace, stored_name=f.stored_name)
             await self._store.delete_file_meta(f.file_id)
             deleted += 1
         return {"status": "ok", "purged": deleted}
@@ -912,8 +912,7 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
             uploaded = await self._storage.save(
                 content=content,
                 filename=file.filename or "upload",
-                form_id=form.id,
-                field_name=field_name,
+                namespace=self._file_namespace(form.id),
             )
         except FileTooLargeError as e:
             raise HTTPException(413, str(e))
@@ -1034,8 +1033,7 @@ class Plugin(RoutedPlugin, IPCCommands, TrustedBase):
                     uploaded = await self._storage.save(
                         content=content,
                         filename=value.filename,
-                        form_id=form.id,
-                        field_name=key,
+                        namespace=self._file_namespace(form.id),
                     )
                     data[key] = uploaded.file_id
                     await self._store.save_file_meta(FileEntry(

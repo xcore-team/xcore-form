@@ -16,33 +16,11 @@ requires:
     version: ">=0.1.0"
 
 env:
-  MAX_FILE_SIZE_MB: "10"
-  ALLOWED_FILE_TYPES: "pdf,doc,docx,jpg,jpeg,png,gif,xlsx,csv"
   DEFAULT_EXPORT_FORMAT: "xlsx"
 
-storage:
-  backend: supabase     # local | s3 | r2 | supabase
-  local:
-    path: data/uploads  # relatif au dossier du plugin
-  s3:
-    bucket: ""
-    region: us-east-1
-    access_key_id: ""       # ou variable d'env AWS_ACCESS_KEY_ID
-    secret_access_key: ""   # ou variable d'env AWS_SECRET_ACCESS_KEY
-    prefix: xform/          # préfixe des clés dans le bucket
-    endpoint_url: ""        # vide = AWS S3, sinon MinIO/R2/autre
-  r2:
-    bucket: ""
-    account_id: ""          # Cloudflare account ID
-    access_key_id: ""
-    secret_access_key: ""
-    prefix: xform/
-  supabase:
-    url: ${NEXT_PUBLIC_SUPABASE_URL}                 # https://xxxx.supabase.co
-    key: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}                 # service_role key (pas anon key)
-    bucket: test
-    prefix: uploads/
-    public: false           # true si le bucket est public (URLs directes)
+# Le stockage de fichiers (upload/download) est délégué à l'extension partagée
+# ext.storage (extensions/xstorage) — voir integration.yaml services.extensions.storage.
+# xform ne conserve que les métadonnées (XFormFileRecord) en DB.
 
 events_emitted:
   xform.submission:

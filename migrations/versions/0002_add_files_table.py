@@ -8,7 +8,7 @@ Create Date: 2026-06-23
 from typing import Sequence, Union
 
 import sqlalchemy as sa
-from alembic import op
+from alembics import op
 
 revision: str = "0002_add_files_table"
 down_revision: Union[str, Sequence[str], None] = "0001_initial"

@@ -1,4 +1,4 @@
-from alembic import context
+from alembics import context
 from src.domain.orm import Base
 
 target_metadata = Base.metadata
